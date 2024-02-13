@@ -1,8 +1,27 @@
+[workspace]
+resolver = "2"
+# later, set members to include examples/*
+
 [package]
 name = "busride-rs"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Nick Fagerlund <nick.fagerlund@gmail.com>"]
 
 [dependencies]
+tokio = { version = "1.36.0", features = ["macros", "rt", "sync", "net"] }
+fastcgi-server = { git = "https://github.com/nfagerlund/fastcgi-server.git", rev = "15db238", features = [
+    "async",
+    "http",
+] }
+tracing = "0.1.40"
+tokio-util = { version = "0.7.0", features = ["codec", "compat"] }
+tokio-stream = "0.1.14"
+futures-util = { version = "0.3.22", default-features = false, features = [
+    "std",
+    "io",
+] }
+http = { version = "1.0.0" }
+axum = { version = "0.7.4" }
+tower = "0.4.13"
+bytes = "1.5.0"
