@@ -1,3 +1,5 @@
+//! test comment
+
 use bytes::BytesMut;
 use fastcgi_server::async_io::Runner;
 use fastcgi_server::{cgi, Config, ExitStatus};
