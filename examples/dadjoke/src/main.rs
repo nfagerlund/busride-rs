@@ -4,11 +4,17 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 struct Cli {
+    /// Serve in FastCGI mode, for low-touch hosting with mod_fcgid. Conflicts with --port.
     #[arg(long)]
     fcgi: bool,
+
+    /// The TCP port to serve the app on. Conflicts with --fcgi.
     #[arg(long)]
     port: Option<u16>,
-    #[arg(long)]
+
+    /// An alternate URI path to mount the app at, for shared domains. Use leading and
+    /// trailing slash, like `/nested/`.
+    #[arg(long, value_name = "PATH")]
     mount: Option<String>,
 }
 
