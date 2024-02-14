@@ -354,11 +354,3 @@ async fn quit() -> io::Result<()> {
         _ = term.recv() => Ok(()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {}
-}
