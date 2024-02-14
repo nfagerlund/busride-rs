@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-# later, set members to include examples/*
+members = ["examples/*"]
 
 [package]
 name = "busride-rs"
