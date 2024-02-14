@@ -15,7 +15,7 @@ use tokio_util::compat::{
     FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt,
 };
 use tower::Service;
-use tracing::{debug, error, Instrument};
+use tracing::{debug, error, info, Instrument};
 
 // Shorthand types for working with fastcgi_server::async_io
 type FcgiReader<'a> = tokio_util::compat::Compat<tokio::net::unix::ReadHalf<'a>>;
@@ -69,14 +69,28 @@ pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io
     std_listener.set_nonblocking(true)?;
     let listener = UnixListener::from_std(std_listener)?;
     let local_addr = listener.local_addr()?;
-    debug!(protocol = "unix", ?local_addr, "listener created");
+    info!(protocol = "unix", ?local_addr, "listener created");
 
     // Build fastcgi-server config and runner
     let config = Config::with_conns(max_connections);
     let runner = config.async_runner();
 
     // Loop to accept connections and serve
-    serve_loop(&runner, app, listener, local_addr).await;
+    let res = tokio::select! {
+        biased;  // poll in order, so quit() future first
+        r = quit() => r,
+        r = serve_loop(&runner, app, listener, local_addr) => Ok(r), // runs forever
+    };
+    if let Err(e) = res {
+        error!(
+            "failed to register TERM signal handler? Seems unlikely, but: {}",
+            e
+        );
+        // Nothing else to really do about that.
+    }
+
+    // Gracefully shut down
+    runner.shutdown().await;
     Ok(())
 }
 
@@ -328,6 +342,17 @@ async fn write_http_response(
     debug!("finished writing fcgi response body");
 
     Ok(())
+}
+
+/// Waits for a signal to shut the FastCGI server down.
+/// Taken directly from the fastcgi-server examples.
+async fn quit() -> io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate())?;
+    tokio::select! {
+        r = tokio::signal::ctrl_c() => r,
+        _ = term.recv() => Ok(()),
+    }
 }
 
 #[cfg(test)]

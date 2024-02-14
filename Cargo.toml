@@ -9,7 +9,13 @@ edition = "2021"
 authors = ["Nick Fagerlund <nick.fagerlund@gmail.com>"]
 
 [dependencies]
-tokio = { version = "1.36.0", features = ["macros", "rt", "sync", "net"] }
+tokio = { version = "1.36.0", features = [
+    "macros",
+    "net",
+    "rt",
+    "signal",
+    "sync",
+] }
 fastcgi-server = { git = "https://github.com/nfagerlund/fastcgi-server.git", rev = "15db238", features = [
     "async",
     "http",
