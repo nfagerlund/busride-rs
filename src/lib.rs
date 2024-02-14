@@ -79,7 +79,7 @@ pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io
     let res = tokio::select! {
         biased;  // poll in order, so quit() future first
         r = quit() => r,
-        r = serve_loop(&runner, app, listener, local_addr) => Ok(r), // runs forever
+        r = serve_loop(&runner, app, listener) => Ok(r), // runs forever
     };
     if let Err(e) = res {
         error!(
@@ -94,12 +94,9 @@ pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io
     Ok(())
 }
 
-async fn serve_loop(
-    runner: &Runner,
-    app: axum::Router,
-    listener: UnixListener,
-    local_addr: tokio::net::unix::SocketAddr,
-) {
+/// Perform the main accept-and-serve loop for translating FastCGI requests to
+/// app-level HTTP requests (and back again).
+async fn serve_loop(runner: &Runner, app: axum::Router, listener: UnixListener) {
     // Loop to accept connections and serve
     loop {
         let token = runner.get_token().await;
@@ -108,14 +105,9 @@ async fn serve_loop(
                 error!(protocol = "unix", "accept failed: {}", &e);
                 continue;
             }
-            Ok((mut connection, remote_addr)) => {
+            Ok((mut connection, _)) => {
                 // Tracing span for the task that'll handle this connection
-                let span = tracing::error_span!(
-                    "fastcgi_connection",
-                    protocol = "unix",
-                    ?local_addr,
-                    ?remote_addr
-                );
+                let span = tracing::error_span!("fastcgi_connection", protocol = "unix",);
                 // Good thing Axum apps are cheap to clone, cuz we need several.
                 // This one belongs to the connection, which might serve several requests.
                 let app_for_conn = app.clone();
