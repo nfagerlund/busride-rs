@@ -2,8 +2,7 @@ use bytes::BytesMut;
 use fastcgi_server::{cgi, Config, ExitStatus};
 use futures_util::AsyncWrite;
 use futures_util::{io::BufWriter, AsyncWriteExt, FutureExt, StreamExt};
-use std::fmt::Write;
-use std::io::{self, prelude::*};
+use std::io;
 use std::num::NonZeroUsize;
 use std::os::fd::*;
 use std::os::unix::fs::FileTypeExt;
@@ -15,7 +14,7 @@ use tokio_util::compat::{
     FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt,
 };
 use tower::Service;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, Instrument};
 
 // Shorthand types for working with fastcgi_server::async_io
 type FcgiReader<'a> = tokio_util::compat::Compat<tokio::net::unix::ReadHalf<'a>>;
@@ -23,13 +22,11 @@ type FcgiWriter<'a> = tokio_util::compat::Compat<tokio::net::unix::WriteHalf<'a>
 type FcgiRequest<'a, 'b, 'c> =
     fastcgi_server::async_io::Request<'a, FcgiReader<'b>, FcgiWriter<'c>>;
 
-// hey
-// stop that
-
 const FD_0_IS_TOO_NORMAL: &str = r#"Fatal error: wasn't executed by a compatible FastCGI client!
 This server mode expects to be passed an open Unix socket on file descriptor 0,
-rather than the normal stdin stream. The only known modern client that supports
+rather than the normal stdin stream. The main modern client that supports
 this is Apache's mod_fcgid."#;
+
 #[derive(Debug)]
 struct Fd0IsTooNormal;
 impl std::fmt::Display for Fd0IsTooNormal {
@@ -44,8 +41,18 @@ impl std::error::Error for Fd0IsTooNormal {}
 /// stdin handle should usually go). Apache2's optional `mod_fcgid` extension is
 /// the last major client that knows how to start FastCGI servers on demand like
 /// this, so it gets a shout-out in the function name.
-async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Result<()> {
+///
+/// Errors: In normal operation, this function just loops until the program is
+/// terminated. An error return means we were unable to start listening on
+/// our expected Unix socket, and never made it to the accept() loop.
+pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Result<()> {
     // Verify that fd 0 is a unix socket before continuing.
+
+    // SAFETY: We just want to do a metadata check on a file descriptor whose path on disk
+    // we don't know... but there's no specific facility for that in std. The only way to
+    // get metadata for an already open file like that is to wrap it in a File struct, but
+    // for later code to be sound, we must ensure we never run its Drop impl. Hence using
+    // a ManuallyDrop as an intermediate value.
     let fd_0_file_type = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(0) })
         .metadata()?
         .file_type();
@@ -53,9 +60,11 @@ async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Re
         eprintln!("{}", FD_0_IS_TOO_NORMAL);
         return Err(io::Error::other(Fd0IsTooNormal));
     }
+    // SAFETY: Yes, it is unsafe to pick a raw file descriptor up off the ground and lick it.
+    // But, we verified above that it's what we expect it to be.
+    let std_listener = unsafe { StdUnixListener::from_raw_fd(0) };
 
     // Set up tokio UnixListener
-    let std_listener = unsafe { StdUnixListener::from_raw_fd(0) };
     std_listener.set_nonblocking(true)?;
     let listener = UnixListener::from_std(std_listener)?;
     let local_addr = listener.local_addr()?;
@@ -74,7 +83,7 @@ async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Re
                 continue;
             }
             Ok((mut connection, remote_addr)) => {
-                // Whip up a tracing span for the task that'll handle this connection
+                // Tracing span for the task that'll handle this connection
                 let span = tracing::error_span!(
                     "fastcgi_connection",
                     protocol = "unix",
@@ -122,7 +131,7 @@ async fn handle_fcgi_request_with_axum_app(
     // FastCGI network protocol.
     //
     // - An exit code of 0 means we successfully handled the request. We might have
-    //   successfully handled it with an HTTP 4xx error, but we were right to do so!
+    //   successfully handled it with an HTTP 4xx error, but we handled it!
     // - A non-0 exit code means we failed at handling the *request,* but we have no
     //   reason to think the connection's borked. Fcgi connections can be re-used for
     //   multiple requests.
