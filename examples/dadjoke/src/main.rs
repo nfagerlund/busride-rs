@@ -1,5 +1,6 @@
 use clap::Parser;
 use tokio::net::TcpListener;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 struct Cli {
@@ -25,12 +26,25 @@ async fn main() {
     // get app
     let dadapp = app::dadapp(mount);
 
+    // Set up tracing
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "debug".into()),
+        )
+        .with(
+            fmt::layer().with_timer(fmt::time::uptime()), // .with_writer(connect_to_log_socket),
+        )
+        .init();
+
     // blast off
     if args.fcgi {
+        println!("Serving in fcgi mode...");
         busride_rs::serve_fcgid(dadapp, 50.try_into().unwrap())
             .await
             .unwrap();
     } else {
+        println!("Serving on port {}...", port);
         let listener = TcpListener::bind(("0.0.0.0", port)).await.unwrap();
         axum::serve(listener, dadapp).await.unwrap();
     }
