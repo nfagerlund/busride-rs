@@ -20,7 +20,7 @@ async fn main() {
     if args.fcgi && args.port.is_some() {
         panic!("The --fcgi and --port options are mutually exclusive. Choose one!");
     }
-    let mount = args.mount.as_deref().unwrap_or("");
+    let mount = args.mount.as_deref().unwrap_or("/");
     let port = args.port.unwrap_or(3000);
 
     // get app
@@ -39,12 +39,12 @@ async fn main() {
 
     // blast off
     if args.fcgi {
-        println!("Serving in fcgi mode...");
+        println!("Serving in fcgi mode, mounted at {}...", mount);
         busride_rs::serve_fcgid(dadapp, 50.try_into().unwrap())
             .await
             .unwrap();
     } else {
-        println!("Serving on port {}...", port);
+        println!("Serving on port {}, mounted at {}...", port, mount);
         let listener = TcpListener::bind(("0.0.0.0", port)).await.unwrap();
         axum::serve(listener, dadapp).await.unwrap();
     }
