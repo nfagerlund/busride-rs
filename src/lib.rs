@@ -1,4 +1,5 @@
 use bytes::BytesMut;
+use fastcgi_server::async_io::Runner;
 use fastcgi_server::{cgi, Config, ExitStatus};
 use futures_util::AsyncWrite;
 use futures_util::{io::BufWriter, AsyncWriteExt, FutureExt, StreamExt};
@@ -74,6 +75,17 @@ pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io
     let config = Config::with_conns(max_connections);
     let runner = config.async_runner();
 
+    // Loop to accept connections and serve
+    serve_loop(&runner, app, listener, local_addr).await;
+    Ok(())
+}
+
+async fn serve_loop(
+    runner: &Runner,
+    app: axum::Router,
+    listener: UnixListener,
+    local_addr: tokio::net::unix::SocketAddr,
+) {
     // Loop to accept connections and serve
     loop {
         let token = runner.get_token().await;
