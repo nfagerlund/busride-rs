@@ -1,0 +1,14 @@
+# Example .htaccess content for serving the example app on shared hosting
+# that has mod_fcgid enabled. Put something similar in an .htaccess file,
+# in the directory that the server associates with the app's URI path.
+# References:
+# https://httpd.apache.org/docs/current/howto/htaccess.html
+# https://httpd.apache.org/mod_fcgid/mod/mod_fcgid.html
+
+Options +ExecCGI -Indexes
+SetHandler fcgid-script
+# To mount the app at the root of a domain or subdomain:
+FcgidWrapper "/home/youruser/bin/dadjoke --fcgi" virtual
+
+# Or, to mount it in a subdirectory of a shared domain:
+# FcgidWrapper "/home/youruser/bin/dadjoke --fcgi --mount /random/cgi-hell/dad-the-sequel/" virtual

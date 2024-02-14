@@ -1,5 +1,19 @@
-//! test comment
-
+//! A wrapper utility for serving an otherwise normal HTTP app over FastCGI,
+//! an antique and awkward app server protocol that, despite its limitations,
+//! enabled an ease of app deployment and maintenance that has yet to be
+//! matched by modern tooling and infrastructure.
+//!
+//! The goal is to allow you to write normal, modern HTTP apps that default
+//! to a conventional deployment mode, while enabling an *alternate* deployment
+//! mode for self-hosting on a cheap shared web server. In other words, to
+//! get the benefits of older hosting models without having to contort your
+//! main app code around their oddities and limitations.
+//!
+//! This crate is in an experimental state, and currently only suppors the
+//! [Axum](https://github.com/tokio-rs/axum) web framework... because that's
+//! what I'm interested in using it with, and I couldn't justify the extra
+//! work of generalizing it before even learning whether others are interested.
+//! (Should be feasible, though.)
 use bytes::BytesMut;
 use fastcgi_server::async_io::Runner;
 use fastcgi_server::{cgi, Config, ExitStatus};
