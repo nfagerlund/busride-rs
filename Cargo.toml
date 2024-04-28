@@ -16,7 +16,7 @@ tokio = { version = "1.36.0", features = [
     "signal",
     "sync",
 ] }
-fastcgi-server = { git = "https://github.com/nfagerlund/fastcgi-server.git", rev = "15db238", features = [
+fastcgi-server = { git = "https://github.com/nfagerlund/fastcgi-server.git", rev = "d8e0160", features = [
     "async",
     "http",
 ] }
