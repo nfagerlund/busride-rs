@@ -19,6 +19,7 @@ use fastcgi_server::async_io::Runner;
 use fastcgi_server::{cgi, Config, ExitStatus};
 use futures_util::AsyncWrite;
 use futures_util::{io::BufWriter, AsyncWriteExt, FutureExt, StreamExt};
+use std::future::Future;
 use std::io;
 use std::num::NonZeroUsize;
 use std::os::fd::*;
@@ -53,6 +54,12 @@ impl std::fmt::Display for Fd0IsTooNormal {
 }
 impl std::error::Error for Fd0IsTooNormal {}
 
+/// Like [`serve_fcgid_with_graceful_shutdown`], but punts on the graceful shutdown.
+pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Result<()> {
+    let never = futures_util::future::pending::<()>();
+    serve_fcgid_with_graceful_shutdown(app, max_connections, never).await
+}
+
 /// Serve an Axum app over FastCGI, listening on an already-open Unix domain socket
 /// that was passed to the program on file descriptor 0 (in the slot where the
 /// stdin handle should usually go). Apache2's optional `mod_fcgid` extension is
@@ -62,7 +69,14 @@ impl std::error::Error for Fd0IsTooNormal {}
 /// Errors: In normal operation, this function just loops until the program is
 /// terminated. An error return means we were unable to start listening on
 /// our expected Unix socket, and never made it to the accept() loop.
-pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io::Result<()> {
+pub async fn serve_fcgid_with_graceful_shutdown<F>(
+    app: axum::Router,
+    max_connections: NonZeroUsize,
+    signal: F,
+) -> io::Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     // Verify that fd 0 is a unix socket before continuing.
 
     // SAFETY: We just want to do a metadata check on a file descriptor whose path on disk
@@ -92,18 +106,11 @@ pub async fn serve_fcgid(app: axum::Router, max_connections: NonZeroUsize) -> io
     let runner = config.async_runner();
 
     // Loop to accept connections and serve
-    let res = tokio::select! {
-        biased;  // poll in order, so quit() future first
-        r = quit() => r,
-        r = serve_loop(&runner, app, listener) => Ok(r), // runs forever
+    tokio::select! {
+        biased;  // poll in order, so check the cancel future first
+        _ = signal => {},
+        _ = serve_loop(&runner, app, listener) => {}, // runs forever
     };
-    if let Err(e) = res {
-        error!(
-            "failed to register TERM signal handler? Seems unlikely, but: {}",
-            e
-        );
-        // Nothing else to really do about that.
-    }
 
     // Gracefully shut down
     runner.shutdown().await;
@@ -350,15 +357,4 @@ async fn write_http_response(
     trace!("finished writing fcgi response body");
 
     Ok(())
-}
-
-/// Waits for a signal to shut the FastCGI server down.
-/// Taken directly from the fastcgi-server examples.
-async fn quit() -> io::Result<()> {
-    use tokio::signal::unix::{signal, SignalKind};
-    let mut term = signal(SignalKind::terminate())?;
-    tokio::select! {
-        r = tokio::signal::ctrl_c() => r,
-        _ = term.recv() => Ok(()),
-    }
 }
