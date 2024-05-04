@@ -53,12 +53,35 @@ async fn main() {
     // blast off
     if args.fcgi {
         println!("Serving in fcgi mode, mounted at {}...", mount);
-        busride_rs::serve_fcgid(dadapp, 50.try_into().unwrap())
+        busride_rs::serve_fcgid_with_graceful_shutdown(dadapp, 50.try_into().unwrap(), quit())
             .await
             .unwrap();
     } else {
         println!("Serving on port {}, mounted at {}...", port, mount);
         let listener = TcpListener::bind(("0.0.0.0", port)).await.unwrap();
-        axum::serve(listener, dadapp).await.unwrap();
+        axum::serve(listener, dadapp)
+            .with_graceful_shutdown(quit())
+            .await
+            .unwrap();
     }
+    println!("Shutting down!");
+}
+
+/// Waits for a signal to shut the server down.
+/// Taken directly from the fastcgi-server examples.
+async fn quit() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let Ok(mut term) = signal(SignalKind::terminate()) else {
+        println!("Couldn't register SIGTERM handler; quitting immediately");
+        return;
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            // don't care if ok or err
+            println!("Received SIGINT (ctrl-c)");
+        },
+        _ = term.recv() => {
+            println!("Received SIGTERM (kill)");
+        },
+    };
 }
