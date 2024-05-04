@@ -31,7 +31,7 @@ use tokio_util::compat::{
     FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt,
 };
 use tower::Service;
-use tracing::{debug, error, info, Instrument};
+use tracing::{debug, error, info, trace, Instrument};
 
 // Shorthand types for working with fastcgi_server::async_io
 type FcgiReader<'a> = tokio_util::compat::Compat<tokio::net::unix::ReadHalf<'a>>;
@@ -200,7 +200,7 @@ async fn handle_fcgi_request_with_axum_app(
             return Ok(ExitStatus::Complete(1));
         }
     };
-    debug!("Constructed http request");
+    trace!("Constructed http request");
 
     // Grab the output handle early, before we borrow req as mut for an extended read
     let w = req.output_stream(fastcgi_server::protocol::RecordType::Stdout);
@@ -210,13 +210,13 @@ async fn handle_fcgi_request_with_axum_app(
 
     // Stream the decoded request body into the HTTP request
     let body_tx_fut = async {
-        debug!("Started polling body transmit future");
+        trace!("Started polling body transmit future");
         // Or I could stack-allocate a fixed-size buffer and loop on
         // poll_read. But what I'm banking on here is that the tokio_stream/_util authors
         // know more than me about how to cheat their way out of copies.
         let mut bytes_stream = FramedRead::new(req.compat(), BytesCodec::new());
         while let Some(x) = bytes_stream.next().await {
-            debug!("streaming bytes...");
+            trace!("streaming bytes...");
             if let Err(e) = body_tx.send(x) {
                 // I think this can happen if the axum app detects something wrong with the
                 // request before it finishes slurping the body, and decides to just bail;
@@ -240,9 +240,9 @@ async fn handle_fcgi_request_with_axum_app(
 
     // Since routes can extract a completed body before they start to return a response,
     // we now need to await these two futures in tandem.
-    debug!("Polling body stream and app futures in tandem:");
+    trace!("Polling body stream and app futures in tandem:");
     let (_, app_response) = tokio::join!(body_tx_fut, app_response_fut);
-    debug!("successfully finished polling joint futures, received app response");
+    trace!("successfully finished polling joint futures, received app response");
     // neat can't-panic unwrap trick for Infallible, from the axum repo's examples
     let app_response = match app_response {
         Ok(x) => x,
@@ -252,12 +252,12 @@ async fn handle_fcgi_request_with_axum_app(
     let mut buffered = BufWriter::new(w);
     // If this write hits an error we literally can't write output anymore,
     // so probably the connection's hosed; return an io::Error instead of an exit code.
-    debug!("writing app response as fcgi response");
+    trace!("writing app response as fcgi response");
     write_http_response(&mut buffered, app_response).await?;
 
     // ok, done!
     buffered.flush().await?;
-    debug!("finished writing fcgi response and flushing output");
+    trace!("finished writing fcgi response and flushing output");
 
     Ok(ExitStatus::SUCCESS)
 }
@@ -325,17 +325,17 @@ async fn write_http_response(
     // buffered AsyncWrite without the extra sync copy, but it doesn't seem urgent rn.
     let mut response_headers_bytes: Vec<u8> = Vec::new();
     cgi::response::http_headers(&mut response_headers_bytes, &resp)?;
-    debug!("writing fcgi response headers...");
+    trace!("writing fcgi response headers...");
     out.write_all(&response_headers_bytes).await?;
-    debug!("done writing fcgi response headers");
+    trace!("done writing fcgi response headers");
 
     // Response body can become a stream of Bytes
     let mut body_stream = resp.into_body().into_data_stream();
-    debug!("starting to write fcgi response body");
+    trace!("starting to write fcgi response body");
     while let Some(maybe_hunk) = body_stream.next().await {
         match maybe_hunk {
             Ok(hunk) => {
-                debug!("writing bytes...");
+                trace!("writing bytes...");
                 // Bytes does a Deref to [u8], so
                 out.write_all(&hunk).await?;
             }
@@ -347,7 +347,7 @@ async fn write_http_response(
             }
         }
     }
-    debug!("finished writing fcgi response body");
+    trace!("finished writing fcgi response body");
 
     Ok(())
 }
