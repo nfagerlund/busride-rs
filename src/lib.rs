@@ -301,9 +301,11 @@ fn http_request_from_fcgi_request(
     // But the rest of the headers all became vars prefixed w/ HTTP_
     h_req = req.env_iter().fold(h_req, |memo, (k, v)| {
         if k.as_ref().starts_with("HTTP_") {
-            let h = &k.as_ref()[5..];
+            let var_name = &k.as_ref()[5..];
+            // Env vars use underscore separators, but header names use hyphens.
+            let header_name = var_name.replace('_', "-");
             // don't sweat the allcaps, http crate doesn't mind
-            memo.header(h, v)
+            memo.header(header_name, v)
         } else {
             memo
         }
