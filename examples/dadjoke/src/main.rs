@@ -25,7 +25,13 @@ struct Cli {
     mount: Option<String>,
 }
 
-#[tokio::main]
+/// Word of warning about the Tokio multi-thread runtime: it defaults
+/// to spawning a worker thread per logical CPU core. That's fine for a
+/// single-purpose container or VM, but is NOT what you want in a
+/// shared hosting environment. Here we're hardcoding a tame thread
+/// limit, but in a real app you should skip the tokio::main macro and
+/// make the cap configurable at run time.
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     let args = Cli::parse();
 
